@@ -121,6 +121,55 @@ def test_get_csv_returns_dataframe(client):
 
 
 # ---------------------------------------------------------------------------
+# Geospatial — as_geo
+# ---------------------------------------------------------------------------
+
+GEO_RECORDS = [
+    {"address_id": 1, "full_address": "1 Main Rd", "geometry_wkt": "POINT (174.78 -41.28)"},
+    {"address_id": 2, "full_address": "2 Main Rd", "geometry_wkt": "POINT (174.79 -41.29)"},
+]
+
+
+@resp_lib.activate
+def test_get_auto_converts_to_geodataframe(client):
+    """When geometry_wkt is present and geopandas is importable, return a GeoDataFrame."""
+    pytest.importorskip("geopandas")
+    import geopandas as gpd
+
+    resp_lib.add(resp_lib.GET, f"{BASE}/v1/series/nz_addresses/data", json={"data": GEO_RECORDS})
+    df = client.get("nz_addresses")
+    assert isinstance(df, gpd.GeoDataFrame)
+    assert "geometry" in df.columns
+    assert "geometry_wkt" not in df.columns
+    assert df.crs.to_epsg() == 4326
+    assert df.geometry.iloc[0].x == pytest.approx(174.78)
+
+
+@resp_lib.activate
+def test_get_as_geo_false_keeps_wkt(client):
+    """as_geo=False returns the plain DataFrame with the WKT string column."""
+    resp_lib.add(resp_lib.GET, f"{BASE}/v1/series/nz_addresses/data", json={"data": GEO_RECORDS})
+    df = client.get("nz_addresses", as_geo=False)
+    assert isinstance(df, VSeries)
+    assert "geometry_wkt" in df.columns
+    assert df["geometry_wkt"].iloc[0].startswith("POINT")
+
+
+@resp_lib.activate
+def test_get_no_geometry_column_returns_vseries(client):
+    """Datasets without a geometry_wkt column still return a VSeries even with as_geo=None."""
+    resp_lib.add(resp_lib.GET, f"{BASE}/v1/series/nz_cpi/data", json={"data": RECORDS})
+    df = client.get("nz_cpi")
+    assert isinstance(df, VSeries)
+    # Should not be a GeoDataFrame even if geopandas is installed
+    try:
+        import geopandas as gpd
+        assert not isinstance(df, gpd.GeoDataFrame)
+    except ImportError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Cache
 # ---------------------------------------------------------------------------
 

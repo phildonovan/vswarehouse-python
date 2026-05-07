@@ -12,6 +12,36 @@ from .series import VSeries
 BASE_URL = "https://api.virtus-solutions.io"
 
 
+def _to_geodataframe(df: "pd.DataFrame", force: bool = False):
+    """Convert a DataFrame with a `geometry_wkt` column to a GeoDataFrame (CRS WGS84).
+
+    Returns the GeoDataFrame on success, or None when geopandas isn't installed
+    (and ``force`` is False) so the caller can fall back to the plain DataFrame.
+    Raises ImportError when ``force=True`` but geopandas is missing.
+    """
+    try:
+        import geopandas as gpd
+        from shapely import wkt as _wkt
+    except ImportError:
+        if force:
+            raise ImportError(
+                "geopandas + shapely are required to return geospatial datasets "
+                "as GeoDataFrames. Install with: pip install vswarehouse[geo]"
+            )
+        return None
+
+    geom = df["geometry_wkt"].apply(lambda s: _wkt.loads(s) if isinstance(s, str) and s else None)
+    gdf = gpd.GeoDataFrame(df.drop(columns=["geometry_wkt"]), geometry=geom, crs="EPSG:4326")
+    # Preserve VSeries-style metadata so the user keeps source / name attrs
+    for attr in ("vs_name", "vs_source"):
+        if hasattr(df, attr):
+            try:
+                setattr(gdf, attr, getattr(df, attr))
+            except Exception:
+                pass
+    return gdf
+
+
 class Client:
     """Client for the vs-warehouse statistical data API.
 
@@ -137,8 +167,9 @@ class Client:
         format: str = "json",
         engine: str = "pandas",
         limit: Optional[int] = None,
+        as_geo: Optional[bool] = None,
     ) -> VSeries:
-        """Fetch dataset rows as a pandas (or polars) DataFrame.
+        """Fetch dataset rows as a pandas (or polars / geopandas) DataFrame.
 
         Args:
             name:   Dataset identifier, e.g. ``"nz_cpi"``.
@@ -149,10 +180,17 @@ class Client:
             limit:  Max rows to return. Default ``None`` requests the full dataset
                     (server enforces a 50,000-row cap on Free/Starter plans; Pro is
                     unlimited). Pass an explicit integer to request fewer rows.
+            as_geo: Convert geospatial datasets to a ``GeoDataFrame``.
+                    ``None`` (default) auto-converts when the dataset has a
+                    ``geometry_wkt`` column AND ``geopandas`` is importable.
+                    ``True`` forces the conversion (raises if geopandas missing).
+                    ``False`` keeps the raw WKT string column.
+                    Install with ``pip install vswarehouse[geo]``.
 
         Returns:
-            A :class:`VSeries` (pandas DataFrame subclass), or a polars
-            DataFrame when ``engine="polars"``.
+            A :class:`VSeries` (pandas DataFrame subclass), a polars DataFrame
+            when ``engine="polars"``, or a ``geopandas.GeoDataFrame`` when
+            geometry is present and conversion is enabled.
         """
         params: dict = {}
         if start:
@@ -163,7 +201,7 @@ class Client:
         # 50K cap for Free/Starter). limit=None on the client maps to limit=0.
         params["limit"] = 0 if limit is None else int(limit)
 
-        cache_key = f"{name}:{start}:{end}:{format}:{params['limit']}"
+        cache_key = f"{name}:{start}:{end}:{format}:{params['limit']}:{as_geo}"
         if self._cache is not None and cache_key in self._cache:
             return self._cache[cache_key]
 
@@ -191,6 +229,13 @@ class Client:
                     "polars is required for engine='polars'. "
                     "Install with: pip install polars"
                 )
+
+        # Optional geopandas conversion. When as_geo=None we auto-convert if both
+        # (a) the dataset has a geometry_wkt column AND (b) geopandas is importable.
+        if as_geo is not False and "geometry_wkt" in result.columns:
+            converted = _to_geodataframe(result, force=as_geo is True)
+            if converted is not None:
+                result = converted
 
         if self._cache is not None:
             self._cache[cache_key] = result

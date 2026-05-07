@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vswarehouse"
-version = "0.3.0"
+version = "0.4.0"
 description = "Python client for the vs-warehouse statistical data API"
 readme = "README.md"
 license = { text = "MIT" }
@@ -33,9 +33,10 @@ Documentation = "https://api.virtus-solutions.io/docs"
 Repository = "https://github.com/virtus-solutions/vswarehouse-python"
 
 [project.optional-dependencies]
-dev = ["pytest", "responses", "pandas"]
+dev = ["pytest", "responses", "pandas", "geopandas>=0.14", "shapely>=2.0"]
 polars = ["polars>=0.20"]
 plot = ["matplotlib>=3.5"]
+geo = ["geopandas>=0.14", "shapely>=2.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["vswarehouse"]
