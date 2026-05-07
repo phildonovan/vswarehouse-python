@@ -97,8 +97,28 @@ class Client:
         return self._get_source(name, "NZ Treasury", **kwargs)
 
     def linz(self, name: str, **kwargs) -> VSeries:
-        """Fetch a LINZ series."""
+        """Fetch a LINZ dataset."""
         return self._get_source(name, "LINZ", **kwargs)
+
+    def statsnz_geo(self, name: str, **kwargs) -> VSeries:
+        """Fetch a Stats NZ Geospatial dataset."""
+        return self._get_source(name, "Stats NZ Geospatial", **kwargs)
+
+    def mbie(self, name: str, **kwargs) -> VSeries:
+        """Fetch an MBIE dataset."""
+        return self._get_source(name, "MBIE", **kwargs)
+
+    def nzta(self, name: str, **kwargs) -> VSeries:
+        """Fetch a Waka Kotahi (NZTA) dataset."""
+        return self._get_source(name, "Waka Kotahi", **kwargs)
+
+    def msd(self, name: str, **kwargs) -> VSeries:
+        """Fetch an MSD dataset."""
+        return self._get_source(name, "MSD", **kwargs)
+
+    def police(self, name: str, **kwargs) -> VSeries:
+        """Fetch an NZ Police / MoJ dataset."""
+        return self._get_source(name, "NZ Police / MoJ", **kwargs)
 
     def _get_source(self, name: str, source: str, **kwargs) -> VSeries:
         df = self.get(name, **kwargs)
@@ -116,15 +136,19 @@ class Client:
         end: Optional[str] = None,
         format: str = "json",
         engine: str = "pandas",
+        limit: Optional[int] = None,
     ) -> VSeries:
-        """Fetch time-series data.
+        """Fetch dataset rows as a pandas (or polars) DataFrame.
 
         Args:
-            name:   Series identifier, e.g. ``"nz_cpi"``.
+            name:   Dataset identifier, e.g. ``"nz_cpi"``.
             start:  ISO date lower bound, e.g. ``"2020-01-01"``.
             end:    ISO date upper bound, e.g. ``"2024-12-31"``.
             format: ``"json"`` (default) or ``"csv"``.
             engine: ``"pandas"`` (default) or ``"polars"``.
+            limit:  Max rows to return. Default ``None`` requests the full dataset
+                    (server enforces a 50,000-row cap on Free/Starter plans; Pro is
+                    unlimited). Pass an explicit integer to request fewer rows.
 
         Returns:
             A :class:`VSeries` (pandas DataFrame subclass), or a polars
@@ -135,8 +159,11 @@ class Client:
             params["start"] = start
         if end:
             params["end"] = end
+        # Server-side: limit=0 means "as much as the plan allows" (full dataset for Pro,
+        # 50K cap for Free/Starter). limit=None on the client maps to limit=0.
+        params["limit"] = 0 if limit is None else int(limit)
 
-        cache_key = f"{name}:{start}:{end}:{format}"
+        cache_key = f"{name}:{start}:{end}:{format}:{params['limit']}"
         if self._cache is not None and cache_key in self._cache:
             return self._cache[cache_key]
 
